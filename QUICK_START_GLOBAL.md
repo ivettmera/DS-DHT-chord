@@ -7,8 +7,12 @@
 
 ## ⚡ Setup Rápido (5 minutos)
 
-### 1️⃣ Compilar (local)
+### 1️⃣ Compilar (en cada VM Linux)
 ```bash
+# Hacer ejecutable
+chmod +x scripts/build/build.sh
+
+# Compilar
 ./scripts/build/build.sh
 ```
 
@@ -16,21 +20,39 @@
 
 **ds-node-1 (Europa - Bootstrap):**
 ```bash
-./bin/chord-server create --addr 0.0.0.0 --port 8000 --metrics
+# Ejecutar como daemon en background
+nohup ./bin/chord-server create --addr 0.0.0.0 --port 8000 --metrics \
+  --metrics-dir results/metrics/vm1_bootstrap \
+  --log-level info > results/logs/vm1_bootstrap.log 2>&1 &
+
+# Verificar que está corriendo
+ps aux | grep chord-server
 ```
 
 **Esperar 30 segundos** ⏳
 
 **ds-node-2 (Sudamérica):**
 ```bash
-./bin/chord-server join 34.38.96.126 8000 --addr 0.0.0.0 --port 8000 --metrics
+# Crear directorios
+mkdir -p results/metrics/vm2_southamerica results/logs
+
+# Unirse al ring
+nohup ./bin/chord-server join 34.38.96.126 8000 --addr 0.0.0.0 --port 8001 \
+  --metrics --metrics-dir results/metrics/vm2_southamerica \
+  --log-level info > results/logs/vm2_southamerica.log 2>&1 &
 ```
 
 **Esperar 30 segundos** ⏳
 
 **us-central1-c (US Central):**
 ```bash
-./bin/chord-server join 34.38.96.126 8000 --addr 0.0.0.0 --port 8000 --metrics
+# Crear directorios
+mkdir -p results/metrics/vm3_uscentral results/logs
+
+# Unirse al ring
+nohup ./bin/chord-server join 34.38.96.126 8000 --addr 0.0.0.0 --port 8002 \
+  --metrics --metrics-dir results/metrics/vm3_uscentral \
+  --log-level info > results/logs/vm3_uscentral.log 2>&1 &
 ```
 
 ## 🧪 Pruebas Rápidas

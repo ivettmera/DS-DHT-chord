@@ -95,6 +95,24 @@ echo "Hello World" | ./bin/chord-client put localhost:8000 mykey
 ./bin/chord-client locate localhost:8000 mykey
 ```
 
+### 🐧 Despliegue Linux VMs (3 Continentes)
+```bash
+# 1. Setup automatizado en cada VM
+chmod +x scripts/deployment/setup-linux-vm.sh
+
+# VM1 Europa (Bootstrap)
+./scripts/deployment/setup-linux-vm.sh bootstrap
+
+# VM2 Sudamérica + VM3 US Central  
+./scripts/deployment/setup-linux-vm.sh joiner
+
+# 2. Probar ring global
+chmod +x scripts/automation/test-global-ring.sh
+./scripts/automation/test-global-ring.sh
+```
+
+**📋 Guía completa Linux:** [LINUX_SETUP_GUIDE.md](LINUX_SETUP_GUIDE.md)
+
 ### Simulación y Experimentos
 ```bash
 # Simulador básico (20 nodos, 5 minutos)
