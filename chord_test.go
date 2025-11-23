@@ -2,13 +2,12 @@ package chord
 
 import (
 	"bytes"
-	"os"
-	"testing"
-	"time"
-
 	"github.com/cdesiniotis/chord/chordpb"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+	"os"
+	"testing"
+	"time"
 )
 
 var n1, n2, n3 *Node

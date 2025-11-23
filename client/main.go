@@ -4,15 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
-
-	"github.com/cdesiniotis/chord/chordpb"
 	"github.com/cdesiniotis/chord"
+	"github.com/cdesiniotis/chord/chordpb"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"time"
 )
 
 func GetChordClient(addr string) (chordpb.ChordClient, error) {
@@ -21,10 +19,7 @@ func GetChordClient(addr string) (chordpb.ChordClient, error) {
 	defer cancel()
 
 	dialOpts := make([]grpc.DialOption, 0, 5)
-	dialOpts = append(dialOpts,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
+	dialOpts = append(dialOpts, grpc.WithInsecure(), grpc.WithBlock(), grpc.FailOnNonTempDialError(true))
 	conn, err := grpc.DialContext(ctx, addr, dialOpts...)
 	//conn, err := grpc.Dial(target, n.grpcOpts.dialOpts...)
 	if err != nil {
@@ -92,7 +87,7 @@ func readConfig(filename string, defaults map[string]interface{}) (*viper.Viper,
 
 func defaults() map[string]interface{} {
 	return map[string]interface{}{
-		"addr": "0.0.0.0:8001",
+		"addr":	"0.0.0.0:8001",
 	}
 }
 

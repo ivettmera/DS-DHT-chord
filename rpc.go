@@ -4,12 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"strconv"
-	"time"
-
 	"github.com/cdesiniotis/chord/chordpb"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"strconv"
+	"time"
 )
 
 type grpcOpts struct {
@@ -168,13 +167,13 @@ func (n *Node) GetSuccessorListRPC(other *chordpb.Node) (*chordpb.SuccessorList,
 	return resp, err
 }
 
-func (n *Node) RecvCoordinatorMsgRPC(other *chordpb.Node, newLeaderId []byte, oldLeaderId []byte) error {
+func (n *Node) RecvCoordinatorMsgRPC(other *chordpb.Node, newLeaderId []byte, oldLeaderId []byte) (error) {
 	client, err := n.getChordClient(other)
 	if err != nil {
 		log.Errorf("error getting Chord Client: %v", err)
 		return err
 	}
-	req := &chordpb.CoordinatorMsg{NewLeaderId: newLeaderId, OldLeaderId: oldLeaderId}
+	req := &chordpb.CoordinatorMsg{NewLeaderId:newLeaderId, OldLeaderId:oldLeaderId}
 
 	// TODO: consider not sending with timeout here
 	ctx, _ := context.WithTimeout(context.Background(), n.grpcOpts.timeout)
@@ -188,14 +187,14 @@ func (n *Node) GetKeysRPC(other *chordpb.Node, id []byte) (*chordpb.KVs, error) 
 		log.Errorf("error getting Chord Client: %v", err)
 		return nil, err
 	}
-	req := &chordpb.PeerID{Id: id}
+	req := &chordpb.PeerID{Id:id}
 
 	ctx, _ := context.WithTimeout(context.Background(), n.grpcOpts.timeout)
-	resp, err := client.GetKeys(ctx, req)
+	resp , err := client.GetKeys(ctx, req)
 	return resp, err
 }
 
-func (n *Node) SendReplicasRPC(other *chordpb.Node, req *chordpb.ReplicaMsg) error {
+func (n *Node) SendReplicasRPC(other *chordpb.Node, req *chordpb.ReplicaMsg) (error) {
 	client, err := n.getChordClient(other)
 	if err != nil {
 		log.Errorf("error getting Chord Client: %v", err)
@@ -208,7 +207,7 @@ func (n *Node) SendReplicasRPC(other *chordpb.Node, req *chordpb.ReplicaMsg) err
 	return err
 }
 
-func (n *Node) RemoveReplicasRPC(other *chordpb.Node, req *chordpb.ReplicaMsg) error {
+func (n *Node) RemoveReplicasRPC(other *chordpb.Node, req *chordpb.ReplicaMsg) (error) {
 	client, err := n.getChordClient(other)
 	if err != nil {
 		log.Errorf("error getting Chord Client: %v", err)
@@ -268,17 +267,7 @@ func (n *Node) LocateRPC(other *chordpb.Node, key string) (*chordpb.Node, error)
  * 		Otherwise, check our finger table and forward the request to the closest preceding node.
  */
 func (n *Node) FindSuccessor(context context.Context, peerID *chordpb.PeerID) (*chordpb.Node, error) {
-	startTime := time.Now()
-	result, err := n.findSuccessor(peerID.Id)
-
-	// Registrar métricas si están habilitadas
-	if n.metrics != nil {
-		latency := float64(time.Since(startTime).Nanoseconds()) / 1e6 // convertir a ms
-		n.metrics.RecordLookup(latency)
-		n.metrics.IncrementMessages()
-	}
-
-	return result, err
+	return n.findSuccessor(peerID.Id)
 }
 
 /* Function: 	GetPredecessor
@@ -383,10 +372,11 @@ func (n *Node) RecvCoordinatorMsg(context context.Context, msg *chordpb.Coordina
 			succList := n.successorList
 			n.succListMtx.RUnlock()
 			for _, node := range succList {
-				n.RemoveReplicasRPC(node, &chordpb.ReplicaMsg{LeaderId: n.Id, Kv: kvs})
+				n.RemoveReplicasRPC(node, &chordpb.ReplicaMsg{LeaderId:n.Id, Kv:kvs})
 			}
 		}
 		n.predMtx.RUnlock()
+
 
 	} else {
 
@@ -402,7 +392,7 @@ func (n *Node) RecvCoordinatorMsg(context context.Context, msg *chordpb.Coordina
 
 		// Two cases where our replica group membership changes
 		if newLeaderExists && oldLeaderExists {
-			if newLeaderId == oldLeaderId {
+			if (newLeaderId == oldLeaderId) {
 				// RG membership has not changed - we are already in this RG
 				return &chordpb.Empty{}, nil
 			}
@@ -443,11 +433,11 @@ func (n *Node) GetKeys(context context.Context, id *chordpb.PeerID) (*chordpb.KV
 	for k, v := range n.rgs[ourId].data {
 		hash = GetPeerID(k, n.config.KeySize)
 		// TODO: ensure this only sends the necessary keys at all times
-		if !BetweenRightIncl(hash, id.Id, n.Id) {
-			kvs = append(kvs, &chordpb.KV{Key: k, Value: v})
+		if !BetweenRightIncl(hash, id.Id, n.Id){
+			kvs = append(kvs, &chordpb.KV{Key:k, Value:v})
 		}
 	}
-	return &chordpb.KVs{Kvs: kvs}, nil
+	return &chordpb.KVs{Kvs:kvs}, nil
 }
 
 /* Function: 	SendReplicas
@@ -460,7 +450,7 @@ func (n *Node) SendReplicas(context context.Context, replicaMsg *chordpb.Replica
 	leaderId := BytesToUint64(replicaMsg.LeaderId)
 
 	n.rgsMtx.RLock()
-	_, ok := n.rgs[leaderId]
+	_ , ok := n.rgs[leaderId]
 	n.rgsMtx.RUnlock()
 
 	if !ok {
@@ -470,7 +460,7 @@ func (n *Node) SendReplicas(context context.Context, replicaMsg *chordpb.Replica
 
 	n.rgsMtx.Lock()
 	defer n.rgsMtx.Unlock()
-	for _, kv := range replicaMsg.Kv {
+	for _ ,kv := range replicaMsg.Kv {
 		n.rgs[leaderId].data[kv.Key] = kv.Value
 	}
 
@@ -487,7 +477,7 @@ func (n *Node) RemoveReplicas(context context.Context, replicaMsg *chordpb.Repli
 	leaderId := BytesToUint64(replicaMsg.LeaderId)
 
 	n.rgsMtx.RLock()
-	_, ok := n.rgs[leaderId]
+	_ , ok := n.rgs[leaderId]
 	n.rgsMtx.RUnlock()
 
 	if !ok {
@@ -497,7 +487,7 @@ func (n *Node) RemoveReplicas(context context.Context, replicaMsg *chordpb.Repli
 
 	n.rgsMtx.Lock()
 	defer n.rgsMtx.Unlock()
-	for _, kv := range replicaMsg.Kv {
+	for _ ,kv := range replicaMsg.Kv {
 		delete(n.rgs[leaderId].data, kv.Key)
 	}
 
@@ -510,11 +500,6 @@ func (n *Node) RemoveReplicas(context context.Context, replicaMsg *chordpb.Repli
  * 		Implementation of Get RPC.
  */
 func (n *Node) Get(context context.Context, key *chordpb.Key) (*chordpb.Value, error) {
-	// Registrar métricas si están habilitadas
-	if n.metrics != nil {
-		n.metrics.IncrementMessages()
-	}
-
 	val, err := n.get(key.Key)
 	if err != nil {
 		return nil, err
@@ -529,11 +514,6 @@ func (n *Node) Get(context context.Context, key *chordpb.Key) (*chordpb.Value, e
  * 		Implementation of Put RPC.
  */
 func (n *Node) Put(context context.Context, kv *chordpb.KV) (*chordpb.Empty, error) {
-	// Registrar métricas si están habilitadas
-	if n.metrics != nil {
-		n.metrics.IncrementMessages()
-	}
-
 	err := n.put(kv.Key, kv.Value)
 	return &chordpb.Empty{}, err
 }
@@ -544,15 +524,5 @@ func (n *Node) Put(context context.Context, kv *chordpb.KV) (*chordpb.Empty, err
  * 		Implementation of Locate RPC.
  */
 func (n *Node) Locate(context context.Context, key *chordpb.Key) (*chordpb.Node, error) {
-	startTime := time.Now()
-	result, err := n.locate(key.Key)
-
-	// Registrar métricas si están habilitadas
-	if n.metrics != nil {
-		latency := float64(time.Since(startTime).Nanoseconds()) / 1e6 // convertir a ms
-		n.metrics.RecordLookup(latency)
-		n.metrics.IncrementMessages()
-	}
-
-	return result, err
+	return n.locate(key.Key)
 }

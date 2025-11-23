@@ -5,12 +5,11 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"github.com/cdesiniotis/chord/chordpb"
+	log "github.com/sirupsen/logrus"
 	"math"
 	"math/big"
 	"strconv"
-
-	"github.com/cdesiniotis/chord/chordpb"
-	log "github.com/sirupsen/logrus"
 )
 
 /* Function:	GetHash
@@ -20,9 +19,12 @@ import (
  */
 func GetHash(key string) []byte {
 	h := sha1.New()
-	// Write never returns an error according to the documentation
-	h.Write([]byte(key))
-	return h.Sum(nil)
+	_, err := h.Write([]byte(key))
+	if err != nil {
+		return nil
+	}
+	bs := h.Sum(nil)
+	return bs
 }
 
 /* Function:	GetPeerID
@@ -90,7 +92,7 @@ func Between(key, a, b []byte) bool {
 	case -1:
 		return bytes.Compare(a, key) == -1 && bytes.Compare(b, key) > 0
 	case 0:
-		return !bytes.Equal(a, key)
+		return bytes.Compare(a, key) != 0
 	}
 	return false
 }
@@ -166,7 +168,7 @@ func Uint64ToBytes(i uint64) []byte {
 }
 
 func Distance(a, b uint64, n int) uint64 {
-	sub := float64(a - b)
+	sub := float64(a-b)
 	_n := float64(n)
 	return uint64(math.Min(math.Abs(sub), float64(_n-math.Abs(sub))))
 }

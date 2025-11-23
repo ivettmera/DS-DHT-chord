@@ -3,8 +3,10 @@ package chord
 import (
 	"bytes"
 	"errors"
-	"fmt"
-	"io"
+	"github.com/cdesiniotis/chord/chordpb"
+	log "github.com/sirupsen/logrus"
+	"google.golang.org/grpc"
+	"io/ioutil"
 	"net"
 	"os"
 	"os/signal"
@@ -12,10 +14,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/cdesiniotis/chord/chordpb"
-	log "github.com/sirupsen/logrus"
-	"google.golang.org/grpc"
 )
 
 // Node implements the Chord GRPC Server interface
@@ -43,16 +41,9 @@ type Node struct {
 	connPool    map[string]*clientConn
 	connPoolMtx sync.RWMutex
 
-	rgs    map[uint64]*ReplicaGroup
-	rgsMtx sync.RWMutex
-	rgFlag int // set to 1 initially, 0 after node sends its first Coordinator Msg
-
-	// Métricas
-	metrics *MetricsCollector
-
-	// Control de inicialización
-	initialized bool
-	initMtx     sync.RWMutex
+	rgs 	map[uint64]*ReplicaGroup
+	rgsMtx	sync.RWMutex
+	rgFlag	int		// set to 1 initially, 0 after node sends its first Coordinator Msg
 
 	signalChannel chan os.Signal
 	shutdownCh    chan struct{}
@@ -114,38 +105,22 @@ func newNode(config *Config) *Node {
 			serverOpts: config.ServerOpts,
 			dialOpts:   config.DialOpts,
 			timeout:    time.Duration(config.Timeout) * time.Millisecond},
-		rgs:           make(map[uint64]*ReplicaGroup),
-		rgFlag:        1,
+		rgs:		make(map[uint64]*ReplicaGroup),
+		rgFlag: 	1,
 		shutdownCh:    make(chan struct{}),
 		signalChannel: make(chan os.Signal, 1),
 	}
 
 	// Get PeerID
-	key := n.Node.Addr + ":" + strconv.Itoa(int(n.Node.Port))
-	n.Node.Id = GetPeerID(key, config.KeySize)
-
-	// Inicializar métricas si está habilitado
-	if config.EnableMetrics {
-		nodeID := fmt.Sprintf("node_%s_%d", n.Node.Addr, n.Node.Port)
-		outputDir := config.MetricsOutputDir
-		if outputDir == "" {
-			outputDir = "metrics"
-		}
-
-		metrics, err := NewMetricsCollector(nodeID, outputDir)
-		if err != nil {
-			log.Warnf("Error inicializando métricas: %v", err)
-		} else {
-			n.metrics = metrics
-		}
-	}
+	key := n.Addr + ":" + strconv.Itoa(int(n.Port))
+	n.Id = GetPeerID(key, config.KeySize)
 
 	// Create new finger table
 	n.fingerTable = NewFingerTable(n, config.KeySize)
 
 	// Allocate a RG for us
 	id := BytesToUint64(n.Id)
-	n.rgs[id] = &ReplicaGroup{leaderId: n.Id, data: make(map[string][]byte)}
+	n.rgs[id] = &ReplicaGroup{leaderId:n.Id, data:make(map[string][]byte)}
 
 	// Create a listening socket for the chord grpc server
 	lis, err := net.Listen("tcp", key)
@@ -183,7 +158,7 @@ func newNode(config *Config) *Node {
 	// Thread 3: Debug
 	// Check config to check if logging is disabled
 	if config.Logging == false {
-		log.SetOutput(io.Discard)
+		log.SetOutput(ioutil.Discard)
 	} else {
 		go func() {
 			ticker := time.NewTicker(10 * time.Second)
@@ -206,19 +181,15 @@ func newNode(config *Config) *Node {
 		}()
 	}
 
+
 	// Thread 4: Stabilization protocol
 	go func() {
 		ticker := time.NewTicker(time.Duration(n.config.StabilizeInterval) * time.Millisecond)
 		for {
 			select {
 			case <-ticker.C:
-				// Esperar inicialización antes de estabilizar
-				n.initMtx.RLock()
-				isInit := n.initialized
-				n.initMtx.RUnlock()
-				if isInit {
-					n.stabilize()
-				}
+
+				n.stabilize()
 			case <-n.shutdownCh:
 				ticker.Stop()
 				return
@@ -228,19 +199,14 @@ func newNode(config *Config) *Node {
 
 	// Thread 5: Fix Finger Table periodically
 	go func() {
+		time.Sleep(3 * time.Second)
 		next := 0
 		ticker := time.NewTicker(time.Duration(n.config.FixFingerInterval) * time.Millisecond)
 		for {
 			select {
 			case <-ticker.C:
-				// Esperar inicialización antes de fix finger
-				n.initMtx.RLock()
-				isInit := n.initialized
-				n.initMtx.RUnlock()
-				if isInit {
-					n.fixFinger(next)
-					next = (next + 1) % n.config.KeySize
-				}
+				n.fixFinger(next)
+				next = (next + 1) % n.config.KeySize
 			case <-n.shutdownCh:
 				ticker.Stop()
 				return
@@ -254,13 +220,7 @@ func newNode(config *Config) *Node {
 		for {
 			select {
 			case <-ticker.C:
-				// Esperar inicialización antes de check predecessor
-				n.initMtx.RLock()
-				isInit := n.initialized
-				n.initMtx.RUnlock()
-				if isInit {
-					n.checkPredecessor()
-				}
+				n.checkPredecessor()
 			case <-n.shutdownCh:
 				ticker.Stop()
 				return
@@ -280,12 +240,6 @@ func newNode(config *Config) *Node {
 func (n *Node) shutdown() {
 	log.Infof("In shutdown()\n")
 	close(n.shutdownCh)
-
-	// Cerrar métricas si están habilitadas
-	if n.metrics != nil {
-		log.Infof("Closing metrics collector...\n")
-		n.metrics.Close()
-	}
 
 	log.Infof("Closing grpc server...\n")
 	n.grpcServer.Stop()
@@ -319,13 +273,6 @@ func (n *Node) create() {
 	n.succMtx.Unlock()
 
 	n.initSuccessorList()
-
-	// Marcar como inicializado - permite que las goroutines de mantenimiento funcionen
-	n.initMtx.Lock()
-	n.initialized = true
-	n.initMtx.Unlock()
-
-	log.Infof("Node successfully created and initialized")
 }
 
 /*
@@ -370,13 +317,6 @@ func (n *Node) join(other *chordpb.Node) error {
 
 	n.initSuccessorList()
 
-	// Marcar como inicializado - permite que las goroutines de mantenimiento funcionen
-	n.initMtx.Lock()
-	n.initialized = true
-	n.initMtx.Unlock()
-
-	log.Infof("Node successfully joined ring and initialized")
-
 	return nil
 }
 
@@ -398,6 +338,7 @@ func (n *Node) stabilize() {
 	*/
 
 	// Must have a successor first prior to running stabilization
+	time.Sleep(3 * time.Second)
 	n.succMtx.RLock()
 	succ := n.successor
 	n.succMtx.RUnlock()
@@ -459,7 +400,7 @@ func (n *Node) updateSuccessorList() {
 		if err != nil {
 			log.Errorf("successor failed while calling GetSuccessorListRPC: %v\n", err)
 			// update successor the next entry in successor table
-			if index == n.config.SuccessorListSize-1 {
+			if index == n.config.SuccessorListSize - 1 {
 				break
 			}
 			n.succMtx.Lock()
@@ -534,23 +475,9 @@ func (n *Node) reconcileSuccessorList(succList *chordpb.SuccessorList) {
  */
 // TODO: come back to this after implementing replica groups
 func (n *Node) findSuccessor(id []byte) (*chordpb.Node, error) {
-	// Verificar si el nodo está inicializado antes de proceder
-	n.initMtx.RLock()
-	isInit := n.initialized
-	n.initMtx.RUnlock()
-
-	if !isInit {
-		return nil, fmt.Errorf("node not yet initialized, cannot find successor")
-	}
-
 	n.succMtx.RLock()
 	succ := n.successor
 	n.succMtx.RUnlock()
-
-	// Verificación adicional de seguridad
-	if succ == nil {
-		return nil, fmt.Errorf("successor is nil, node initialization incomplete")
-	}
 
 	if BetweenRightIncl(id, n.Id, succ.Id) {
 		return succ, nil
@@ -602,7 +529,7 @@ func (n *Node) closestPrecedingNode(id []byte, exclude ...*chordpb.Node) *chordp
 
 	// Look in successor list
 	n.succListMtx.RLock()
-	for i := n.config.SuccessorListSize - 1; i >= 0; i-- {
+	for i := n.config.SuccessorListSize - 1; i >= 0; i--{
 		succListEntry := n.successorList[i]
 		if Contains(exclude, succListEntry) {
 			continue
@@ -663,7 +590,7 @@ func (n *Node) checkPredecessor() {
 		n.succListMtx.RUnlock()
 		// send coordinator msg to all
 		log.Infof("In checkPredecessor() - sending coordinator msg: new %d\t old: %d\n", n.Id, pred.Id)
-		for _, node := range succList {
+		for _, node := range  succList {
 			n.RecvCoordinatorMsgRPC(node, n.Id, pred.Id)
 		}
 
@@ -709,7 +636,7 @@ func (n *Node) get(key string) ([]byte, error) {
 		return nil, err
 	}
 
-	if bytes.Equal(n.Id, node.Id) {
+	if bytes.Compare(n.Id, node.Id) == 0 {
 		// key is stored at current node
 		myId := BytesToUint64(n.Id)
 		n.rgsMtx.RLock()
@@ -747,7 +674,7 @@ func (n *Node) put(key string, value []byte) error {
 		return err
 	}
 
-	if bytes.Equal(n.Id, node.Id) {
+	if bytes.Compare(n.Id, node.Id) == 0 {
 		// key belongs to current node
 
 		// store kv in our datastore
