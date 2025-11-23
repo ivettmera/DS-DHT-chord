@@ -1,5 +1,3 @@
-addr: 0.0.0.0
-port: 8001
+addr: 10.204.0.2
+port: 8000
 logging: false
-enablemetrics: false
-metricsoutputdir: "metrics"
